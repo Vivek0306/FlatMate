@@ -6,8 +6,9 @@ from langchain_ollama import ChatOllama
 from langchain_classic.chains.combine_documents import create_stuff_documents_chain
 from langchain_classic.chains import create_retrieval_chain
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_community.document_loaders import TextLoader
+from langchain_community.document_loaders import TextLoader, PyPDFLoader, DirectoryLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+
 import os
 
 from config import (
@@ -18,17 +19,54 @@ from config import (
     OLLAMA_API_KEY,
     TOP_K,
     TEMPERATURE,
+    CHUNK_SIZE,
+    CHUNK_OVERLAP,
+    DATA_DIR,
+    PDF_DIR
 )
+
+def load_documents():
+    all_documents = []
+    txt_files = [f for f in os.listdir(DATA_DIR) if f.endswith('.txt')]
+    for txt_file in txt_files:
+        print(f"Loading text file: {txt_file}...")
+        loader = TextLoader(os.path.join(DATA_DIR, txt_file))
+        docs = loader.load()
+
+        for doc in docs:
+            doc.metadata['source'] = txt_file
+        all_documents.extend(docs)
+
+    if os.path.exists(PDF_DIR):
+        pdf_files = [f for f in os.listdir(PDF_DIR) if f.endswith('.pdf')]
+        for pdf_file in pdf_files:
+            print(f"Loading PDF file: {pdf_file}...")
+            try:
+                loader = PyPDFLoader(os.path.join(PDF_DIR, pdf_file))
+                docs = loader.load()
+
+                for doc in docs:
+                    doc.metadata['source'] = pdf_file
+                all_documents.extend(docs)
+                print(f"   ✓ Loaded {len(docs)} pages from {pdf_file}")
+            except Exception as e:
+                print(f"   ⚠️ Failed to load {pdf_file}: {e}")
+    print(f"\nTotal documents loaded: {len(all_documents)}")
+    return all_documents
 
 def create_vectorstore():
     print("Loading documents.....")
-    loader = TextLoader("data/kerala_property_guide.txt")
-    documents = loader.load()
+    documents = load_documents()
+
+    if not documents:
+        raise ValueError("No documents found! Please add text files or PDFs to the data/ directory.")
+    
     print(f"\nLoaded {len(documents)} documents.")
 
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=50,
+        chunk_size=CHUNK_SIZE,
+        chunk_overlap=CHUNK_OVERLAP,
+        separators=["\n\n", "\n", " ", ""]
     )
     chunks = text_splitter.split_documents(documents)
     print(f"\nSplit into {len(chunks)} chunks of text.")
@@ -84,10 +122,14 @@ def create_rag_chain():
 
     # Prompt
     prompt = ChatPromptTemplate.from_template("""
-You are FlatMate (Application Name), a helpful assistant for property buying in Kerala, India.
-Answer ONLY using the context below.
-If information is missing, say:
-"I'm sorry, I don't have that information. I can help with property buying in Kerala."
+You are FlatMate, an expert assistant for property buying in Kerala, India.
+
+INSTRUCTIONS:
+1. Answer ONLY using the information from the context below
+2. Be thorough and include ALL relevant details from the context
+3. After each fact or piece of information, cite the source document in [brackets]
+4. If multiple documents mention the same thing, cite all of them
+5. If the context doesn't contain enough information, acknowledge what's missing
 
 Context:
 {context}
@@ -95,8 +137,9 @@ Context:
 Question:
 {input}
 
-Answer:
+Answer with citations:
 """)
+
 
     # RAG chain
     document_chain = create_stuff_documents_chain(llm, prompt)

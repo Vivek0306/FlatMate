@@ -29,5 +29,22 @@ while True:
         stop_event.set()
         t.join()
 
+    # Display answer
     print(f"\n✅ Answer:\n{result['answer']}")
+    
+    # Display sources
+    # if 'context' in result and result['context']:
+    #     print(f"\n📚 Sources Used:")
+    #     sources = set()
+    #     for doc in result['context']:
+    #         source = doc.metadata.get('source', 'Unknown')
+    #         page = doc.metadata.get('page', None)
+    #         if page is not None:
+    #             sources.add(f"  • {source} (Page {page + 1})")
+    #         else:
+    #             sources.add(f"  • {source}")
+        
+    #     for source in sorted(sources):
+    #         print(source)
+    
     print("-" * 100)
